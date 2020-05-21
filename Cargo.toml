@@ -1,0 +1,26 @@
+[package]
+name = "binper"
+version = "0.1.1"
+authors = ["Areg Baghinyan <areg@baghinyan.com>"]
+edition = "2018"
+license = "MIT"
+description = "BINPER is a binary parser library in Rust."
+repository = "https://github.com/abaghinyan/binper"
+publish = true
+
+[dependencies]
+lazy_static = "1.4"
+
+[dependencies.log]
+version = "0.4"
+default-features = false
+optional = true
+
+[dependencies.scroll]
+version = "0.10"
+default_features = false
+
+[features]
+default = ["std"]
+std = ["alloc", "scroll/std"]
+alloc = ["scroll/derive", "log"]
