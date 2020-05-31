@@ -2,11 +2,12 @@ use crate::error;
 use crate::pe::header::Headers;
 use crate::pe::section::ImportDirectoryTable;
 use scroll::Pread;
+use serde::{Deserialize, Serialize};
 
 #[allow(unused)]
 use crate::pe::display;
 
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize)]
 pub struct PE {
     pub headers: Headers,
     pub import_directory_table: ImportDirectoryTable,

@@ -1,12 +1,16 @@
+use std::str;
+
 use scroll::{IOread, IOwrite, Pread, Pwrite, SizeWith};
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeStruct};
+use chrono::{DateTime, NaiveDateTime, Utc};
 
 use crate::error;
-
+use crate::pe::index;
 /// DOS header present in all PE binaries
 pub const DOS_HEADER_SIGNATURE: u16 = 0x5A4D;
 pub const DOS_HEADER_FILE_ADD_OF_RELOC_TABLE: u16 = 0x0040;
 
-#[derive(Debug, PartialEq, Copy, Clone, Default, Pread, Pwrite, IOread, IOwrite, SizeWith)]
+#[derive(Debug, PartialEq, Copy, Clone, Default, Pread, Pwrite, IOread, IOwrite, SizeWith, Deserialize)]
 pub struct Dos {
     pub signature: u16, /// MS DOS header signature: 5a4d (MZ)
     pub last_size: u16,
@@ -29,6 +33,35 @@ pub struct Dos {
     pub pe_header_offset: u32
 }
 
+impl Serialize for Dos {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("Dos", 19)?;
+        state.serialize_field("signature", str::from_utf8(&self.signature.to_le_bytes()).expect("Invalid UTF-8"))?;
+        state.serialize_field("last_size", &self.last_size)?;
+        state.serialize_field("pages_in_file", &format!("0x{:x}", &self.pages_in_file))?;
+        state.serialize_field("relocations", &format!("0x{:x}", &self.relocations))?;
+        state.serialize_field("header_size_in_paragraph", &format!("0x{:x}", &self.header_size_in_paragraph))?;
+        state.serialize_field("min_extra_paragraph_needed", &format!("0x{:x}", &self.min_extra_paragraph_needed))?;
+        state.serialize_field("max_extra_paragraph_needed", &format!("0x{:x}", &self.max_extra_paragraph_needed))?;
+        state.serialize_field("ss", &format!("0x{:x}", &self.ss))?;
+        state.serialize_field("sp", &format!("0x{:x}", &self.sp))?;
+        state.serialize_field("checksum", &format!("0x{:x}", &self.checksum))?;
+        state.serialize_field("ip", &format!("0x{:x}", &self.ip))?;
+        state.serialize_field("cs", &format!("0x{:x}", &self.cs))?;
+        state.serialize_field("file_add_of_reloc_table", &format!("0x{:x}", &self.file_add_of_reloc_table))?;
+        state.serialize_field("overlay_number", &format!("0x{:x}", &self.overlay_number))?;
+        state.serialize_field("reserved_1", &self.reserved_1)?;
+        state.serialize_field("oem_identifier", &format!("0x{:x}", &self.oem_identifier))?;
+        state.serialize_field("oem_information", &format!("0x{:x}", &self.oem_information))?;
+        state.serialize_field("reserved_2", &self.reserved_2)?;
+        state.serialize_field("pe_header_offset", &format!("0x{:x}", &self.pe_header_offset))?;
+        state.end()
+    }
+}
+
 impl Dos {
     pub fn parse(bytes: &[u8], offset: &mut usize) -> error::Result<Self> {
         Ok(bytes.gread_with(offset, scroll::LE)?)
@@ -38,9 +71,21 @@ impl Dos {
 /// PE header present in all PE binaries
 pub const PE_HEADER_SIGNATURE: u32 = 0x00004550;
 
-#[derive(Debug, PartialEq, Copy, Clone, Default, Pread, Pwrite, IOread, IOwrite, SizeWith)]
+#[derive(Debug, PartialEq, Copy, Clone, Default, Pread, Pwrite, IOread, IOwrite, SizeWith, Deserialize)]
 pub struct PE {
     pub signature: u32,
+}
+
+impl Serialize for PE {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("PE", 1)?;
+        let signature_raw = String::from_utf8(self.signature.to_le_bytes().to_vec()).expect("Invalid UTF-8");
+        state.serialize_field("signature", signature_raw.trim_matches(char::from(0)))?;
+        state.end()
+    }
 }
 
 impl PE {
@@ -49,7 +94,7 @@ impl PE {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone, Default, Pread, Pwrite, IOread, IOwrite, SizeWith)]
+#[derive(Debug, PartialEq, Copy, Clone, Default, Pread, Pwrite, IOread, IOwrite, SizeWith, Deserialize)]
 pub struct COFF {
     pub machine: u16,
     pub number_of_section: u16,
@@ -60,13 +105,32 @@ pub struct COFF {
     pub characteristics: u16,
 }
 
+impl Serialize for COFF {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("COFF", 7)?;
+        state.serialize_field("machine", index::MACHINE.get(&self.machine).unwrap())?;
+        state.serialize_field("number_of_section", &self.number_of_section)?;
+        let time_date_stamp_naive = NaiveDateTime::from_timestamp(self.time_date_stamp as i64,0);
+        let time_date_stamp_utc: DateTime<Utc> = DateTime::from_utc(time_date_stamp_naive, Utc);
+        state.serialize_field("time_date_stamp", &time_date_stamp_utc.format("%Y-%m-%d %H:%M:%S").to_string())?;
+        state.serialize_field("pointer_to_symbol_table", &format!("0x{:x}", &self.pointer_to_symbol_table))?;
+        state.serialize_field("number_of_symbols", &self.number_of_symbols)?;
+        state.serialize_field("size_of_optional_header", &self.size_of_optional_header)?;
+        state.serialize_field("characteristics", &format!("0x{:b}", &self.characteristics))?;
+        state.end()
+    }
+}
+
 impl COFF {
     pub fn parse(bytes: &[u8], offset: &mut usize) -> error::Result<Self> {
         Ok(bytes.gread_with(offset, scroll::LE)?)
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone, Default, Pread, Pwrite, IOread, IOwrite, SizeWith)]
+#[derive(Debug, PartialEq, Copy, Clone, Default, Pread, Pwrite, IOread, IOwrite, SizeWith, Deserialize)]
 pub struct StandardFields {
     pub signature: u16,
     pub major_linker_version: u8,
@@ -77,6 +141,26 @@ pub struct StandardFields {
     pub address_of_entry_point: u32,
     pub base_of_code: u32,
 }
+
+impl Serialize for StandardFields {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("StandardFields", 8)?;
+        state.serialize_field("signature", index::PEFORMAT.get(&self.signature).unwrap())?;
+        state.serialize_field("major_linker_version", &self.major_linker_version)?;
+        state.serialize_field("minor_linker_version", &self.minor_linker_version)?;
+        state.serialize_field("size_of_code", &self.size_of_code)?;
+        state.serialize_field("size_of_code", &self.size_of_initialized_data)?;
+        state.serialize_field("size_of_code", &self.size_of_uninitialized_data)?;
+        state.serialize_field("address_of_entry_point", &format!("0x{:x}", &self.address_of_entry_point))?;
+        state.serialize_field("base_of_code", &format!("0x{:x}", &self.base_of_code))?;
+        state.end()
+    }
+}
+
+
 impl StandardFields {
     pub fn parse(bytes: &[u8], offset: &mut usize) -> error::Result<Self> {
         Ok(bytes.gread_with(offset, scroll::LE)?)
@@ -134,7 +218,9 @@ pub struct SpecificFields64 {
     pub number_of_rva_and_sizes: u32,
 }
 
-#[derive(Debug, PartialEq, Copy, Clone, Default, Pread, Pwrite, IOread, IOwrite, SizeWith)]
+
+
+#[derive(Debug, PartialEq, Copy, Clone, Default, Pread, Pwrite, IOread, IOwrite, SizeWith, Deserialize)]
 pub struct SpecificFields {
     pub base_of_data: u32,
     pub image_base: u64,
@@ -160,6 +246,37 @@ pub struct SpecificFields {
     pub number_of_rva_and_sizes: u32,
 }
 
+impl Serialize for SpecificFields {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("SpecificFields", 22)?;
+        state.serialize_field("base_of_data", &format!("0x{:x}", &self.base_of_data))?;
+        state.serialize_field("image_base", &format!("0x{:x}", &self.image_base))?;
+        state.serialize_field("section_alignment", &format!("0x{:x}", &self.section_alignment))?;
+        state.serialize_field("file_alignment", &format!("0x{:x}", &self.file_alignment))?;
+        state.serialize_field("major_os_version", &self.major_os_version)?;
+        state.serialize_field("minor_os_version", &self.minor_os_version)?;
+        state.serialize_field("major_image_version", &self.major_image_version)?;
+        state.serialize_field("minor_image_version", &self.minor_image_version)?;
+        state.serialize_field("major_subsystem_version", &self.major_os_version)?;
+        state.serialize_field("minor_subsystem_version", &self.minor_subsystem_version)?;
+        state.serialize_field("reserved", &format!("0x{:x}", &self.reserved))?;
+        state.serialize_field("size_of_image", &self.size_of_image)?;
+        state.serialize_field("size_of_headers", &self.size_of_headers)?;
+        state.serialize_field("checksum", &format!("0x{:x}", &self.checksum))?;
+        state.serialize_field("subsystem", index::SUBSYSTEM.get(&self.subsystem).unwrap())?;
+        state.serialize_field("dll_characteristics", &format!("0x{:b}", &self.dll_characteristics))?;
+        state.serialize_field("size_of_stack_reserve", &self.size_of_stack_reserve)?;
+        state.serialize_field("size_of_stack_commit", &self.size_of_stack_commit)?;
+        state.serialize_field("size_of_heap_reserve", &self.size_of_heap_reserve)?;
+        state.serialize_field("size_of_heap_commit", &self.size_of_heap_commit)?;
+        state.serialize_field("loader_flags", &self.loader_flags)?;
+        state.serialize_field("number_of_rva_and_sizes", &self.number_of_rva_and_sizes)?;
+        state.end()
+    }
+}
 impl From<SpecificFields32> for SpecificFields {
     fn from(specific_fields_32: SpecificFields32) -> Self {
         SpecificFields {
@@ -218,10 +335,22 @@ impl From<SpecificFields64> for SpecificFields {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone, Default, Pread, Pwrite, IOread, IOwrite, SizeWith)]
+#[derive(Debug, PartialEq, Copy, Clone, Default, Pread, Pwrite, IOread, IOwrite, SizeWith, Deserialize)]
 pub struct DataDirectory {
     pub virtual_address: u32,
     pub size: u32
+}
+
+impl Serialize for DataDirectory {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("DataDirectory", 2)?;
+        state.serialize_field("virtual_address", &format!("0x{:x}", &self.virtual_address))?;
+        state.serialize_field("size", &self.size)?;
+        state.end()
+    }
 }
 
 impl DataDirectory {
@@ -232,7 +361,7 @@ impl DataDirectory {
 
 pub const MAX_NUMBER_OF_RVA: usize = 16;
 
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize)]
 pub struct DataDirectories {
     pub items: Vec<DataDirectory>,
 }
@@ -253,7 +382,7 @@ impl<'a> scroll::ctx::TryFromCtx<'a, (usize, scroll::Endian)> for DataDirectorie
 pub const OPTIONAL_HEADER_SIGNATURE_32: u16 = 0x10b;
 pub const OPTIONAL_HEADER_SIGNATURE_64: u16 = 0x20b;
 
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize)]
 pub struct Optional {
     pub standard_fields: StandardFields,
     pub specific_fields: SpecificFields,
@@ -283,7 +412,7 @@ impl Optional {
     }
 }
 
-#[derive(Debug, PartialEq, Copy, Clone, Default, Pread, Pwrite, IOread, IOwrite, SizeWith)]
+#[derive(Debug, PartialEq, Copy, Clone, Default, Pread, Pwrite, IOread, IOwrite, SizeWith, Deserialize)]
 pub struct Section {
     pub name: u64,
     pub virtual_size: u32,
@@ -297,13 +426,34 @@ pub struct Section {
     pub characteristics: u32,
 }
 
+impl Serialize for Section {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("Section", 10)?;
+        let name_raw = String::from_utf8(self.name.to_le_bytes().to_vec()).expect("Invalid UTF-8");
+        state.serialize_field("name", name_raw.trim_matches(char::from(0)))?;
+        state.serialize_field("virtual_size", &self.virtual_size)?;
+        state.serialize_field("virtual_address", &format!("0x{:x}", &self.virtual_address))?;
+        state.serialize_field("size_of_raw_data", &self.size_of_raw_data)?;
+        state.serialize_field("pointer_to_raw_data", &format!("0x{:x}", &self.pointer_to_raw_data))?;
+        state.serialize_field("pointer_to_relocations", &format!("0x{:x}", &self.pointer_to_relocations))?;
+        state.serialize_field("pointer_to_linenumbers", &format!("0x{:x}", &self.pointer_to_linenumbers))?;
+        state.serialize_field("number_of_relocations", &self.number_of_relocations)?;
+        state.serialize_field("number_of_linenumbers", &self.number_of_linenumbers)?;
+        state.serialize_field("characteristics", &format!("{:b}",&self.characteristics))?;
+        state.end()
+    }
+}
+
 impl Section {
     pub fn parse(bytes: &[u8], offset: &mut usize) -> error::Result<Self> {
         Ok(bytes.gread_with(offset, scroll::LE)?)
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize)]
 pub struct Sections {
     pub items: Vec<Section>
 }
@@ -321,7 +471,7 @@ impl<'a> scroll::ctx::TryFromCtx<'a, (usize, scroll::Endian)> for Sections {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize)]
 pub struct Headers {
     pub dos: Dos,
     pub pe: PE,
