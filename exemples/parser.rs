@@ -1,9 +1,9 @@
 use std::fs::File;
 use std::io::Read;
 
-use lib::pe::pe::PE;
+use binper::pe::pe::PE;
 
-fn main() -> lib::error::Result<()> {
+fn main() -> binper::error::Result<()> {
     // 32 bit
     let mut f = File::open("samples/pe.exe")?;
 

@@ -8,7 +8,18 @@ BINPER is a binary parser library in Rust.
 
  🔒 Implemented using 100% safe rust and works on all platforms supported by rust
 
-## Usage
+## Install
+```bash
+cargo install binper
+```
+## Binary usage
+```bash
+binper [BIN_FILE_PATH]
+```
+#### ⚠️ WARNING  ⚠️
+Currently, only PE file parsing is implemented
+
+## Library usage
 ```rust
 use std::fs::File;
 use std::io::Read;

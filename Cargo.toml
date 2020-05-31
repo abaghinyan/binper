@@ -1,6 +1,6 @@
 [package]
 name = "binper"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Areg Baghinyan <areg@baghinyan.com>"]
 edition = "2018"
 license = "MIT"
@@ -8,8 +8,20 @@ description = "BINPER is a binary parser library in Rust."
 repository = "https://github.com/abaghinyan/binper"
 publish = true
 
+[lib]
+name = "binper"
+path = "src/lib.rs"
+
+[[bin]]
+name = "binper"
+path = "src/bin.rs"
+
 [dependencies]
 lazy_static = "1.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "^1.0"
+chrono = "^0.4"
+structopt = "0.3"
 
 [dependencies.log]
 version = "0.4"
